@@ -15,12 +15,6 @@ const addFunds = async (req, res) => {
     const userId = req.user.id;
     const { amount } = req.body;
     const newBalance = await walletService.addFunds(userId, amount);
-    await transactionRepository.recordTransaction(
-      userId, // fromUser
-      null, // toUser
-      amount,
-      "deposit",
-    );
     res.status(200).json({ success: true, balance: newBalance });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -31,12 +25,6 @@ const withdrawFunds = async (req, res) => {
     const userId = req.user.id;
     const { amount } = req.body;
     const newBalance = await walletService.withdrawFunds(userId, amount);
-    await transactionRepository.recordTransaction(
-      userId, // fromUser
-      null, // toUser
-      amount,
-      "withdraw",
-    );
     res.status(200).json({ success: true, balance: newBalance });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -50,18 +38,6 @@ const transferFunds = async (req, res) => {
       senderId,
       receiverId,
       amount,
-    );
-    await transactionRepository.recordTransaction(
-      senderId, // fromUser
-      receiverId, // toUser
-      amount,
-      "transfer_sent",
-    );
-    await transactionRepository.recordTransaction(
-      receiverId, // fromUser
-      senderId, // toUser
-      amount,
-      "transfer_received",
     );
     res.status(200).json({ success: true, ...result });
   } catch (error) {
