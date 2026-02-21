@@ -1,3 +1,11 @@
+// Fetch wallet with row-level lock for transaction
+const getWalletByUserIdForUpdate = async (client, userId) => {
+  const result = await client.query(
+    "SELECT * FROM wallets WHERE user_id = $1 FOR UPDATE",
+    [userId],
+  );
+  return result.rows[0];
+};
 
 const pool = require("../config/db");
 
@@ -29,4 +37,5 @@ module.exports = {
   getWalletByUserId,
   updateWalletBalance,
   deleteWalletByUserId,
+  getWalletByUserIdForUpdate,
 };
