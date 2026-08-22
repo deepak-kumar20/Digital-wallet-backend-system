@@ -1,14 +1,15 @@
 const transactionRepository = require("../repositories/transactionRepository");
 
-// For deposit/withdraw: pass (userId, null, amount, status)
-// For transfer: pass (fromUser, toUser, amount, status)
+// Updated to accept transactional client (Unit of Work)
 const recordTransaction = async (
+  client,
   fromUser,
   toUser,
   amount,
   status = "SUCCESS",
 ) => {
   return await transactionRepository.recordTransaction(
+    client,
     fromUser,
     toUser,
     amount,
@@ -16,8 +17,8 @@ const recordTransaction = async (
   );
 };
 
-const getTransactionsByUserId = async (userId) => {
-  return await transactionRepository.getTransactionsByUserId(userId);
+const getTransactionsByUserId = async (userId, cursor, limit) => {
+  return await transactionRepository.getTransactionsByUserId(userId, cursor, limit);
 };
 
 module.exports = {

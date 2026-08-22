@@ -1,4 +1,3 @@
-const { pool } = require("pg");
 const pool = require("../config/db");
 const walletRepository = require("../repositories/walletRepository");
 const transactionService = require("./transactionService");
@@ -27,7 +26,10 @@ const addFunds = async (userId, amount) => {
       newBalance,
       userId,
     ]);
-    await transactionService.recordTransaction(userId, null, amount, "DEPOSIT");
+    
+    // Pass the transactional client (Unit of Work)
+    await transactionService.recordTransaction(client, userId, null, amount, "DEPOSIT");
+    
     await client.query("COMMIT");
     return newBalance;
   } catch (error) {
@@ -37,6 +39,7 @@ const addFunds = async (userId, amount) => {
     client.release();
   }
 };
+
 const withdrawFunds = async (userId, amount) => {
   const client = await pool.connect();
   try {
@@ -56,12 +59,16 @@ const withdrawFunds = async (userId, amount) => {
       newBalance,
       userId,
     ]);
+    
+    // Pass the transactional client (Unit of Work)
     await transactionService.recordTransaction(
+      client,
       userId,
       null,
       amount,
       "WITHDRAW",
     );
+    
     await client.query("COMMIT");
     return newBalance;
   } catch (error) {
@@ -71,26 +78,48 @@ const withdrawFunds = async (userId, amount) => {
     client.release();
   }
 };
-const transferFunds = async (senderId, receiverId, amount) => {
+
+const transferFunds = async (senderId, receiverId, amount, idempotencyKey) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const senderWallet = await walletRepository.getWalletByUserIdForUpdate(
+    
+    // Idempotency Check
+    if (idempotencyKey) {
+      const existing = await client.query("SELECT id FROM idempotency_keys WHERE key = $1", [idempotencyKey]);
+      if (existing.rows.length > 0) {
+         await client.query("ROLLBACK");
+         return { message: "Transfer already processed" };
+      }
+      await client.query("INSERT INTO idempotency_keys (key) VALUES ($1)", [idempotencyKey]);
+    }
+
+    // Deadlock Prevention: Lock Ordering (Always lock lower ID first)
+    const firstId = Math.min(senderId, receiverId);
+    const secondId = Math.max(senderId, receiverId);
+
+    const firstWallet = await walletRepository.getWalletByUserIdForUpdate(
       client,
-      senderId,
+      firstId,
     );
-    const receiverWallet = await walletRepository.getWalletByUserIdForUpdate(
+    const secondWallet = await walletRepository.getWalletByUserIdForUpdate(
       client,
-      receiverId,
+      secondId,
     );
+
+    const senderWallet = senderId === firstId ? firstWallet : secondWallet;
+    const receiverWallet = receiverId === firstId ? firstWallet : secondWallet;
+
     if (!senderWallet || !receiverWallet) {
       throw new Error("Sender or receiver wallet not found");
     }
     if (Number(senderWallet.balance) < Number(amount)) {
       throw new Error("Insufficient funds");
     }
+
     const newSenderBalance = Number(senderWallet.balance) - Number(amount);
     const newReceiverBalance = Number(receiverWallet.balance) + Number(amount);
+
     await client.query("UPDATE wallets SET balance = $1 WHERE user_id = $2", [
       newSenderBalance,
       senderId,
@@ -99,12 +128,16 @@ const transferFunds = async (senderId, receiverId, amount) => {
       newReceiverBalance,
       receiverId,
     ]);
+    
+    // Pass the transactional client (Unit of Work)
     await transactionService.recordTransaction(
+      client,
       senderId,
       receiverId,
       amount,
       "TRANSFER",
     );
+    
     await client.query("COMMIT");
     return {
       senderBalance: newSenderBalance,
@@ -117,6 +150,7 @@ const transferFunds = async (senderId, receiverId, amount) => {
     client.release();
   }
 };
+
 module.exports = {
   getWalletBalance,
   addFunds,
